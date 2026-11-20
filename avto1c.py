@@ -175,13 +175,48 @@ def activate_1c(log=print):
         user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
         user32.SetForegroundWindow.argtypes = [wintypes.HWND]
         user32.ShowWindow(h, 3)          # SW_MAXIMIZE
-        pyautogui.press("alt")
+        send_keys("alt")
         user32.SetForegroundWindow(h)
         time.sleep(0.6)
     except Exception as e:  # noqa
         log(f"   1C oynasini oldinga chiqarib bo'lmadi: {e}")
         return False
     return True
+
+
+# ---------- Klaviatura: tugma KODLARI bilan (ruscha/o'zbekcha klaviaturada ham ishlaydi) ----------
+VK = {
+    "ctrl": 0x11, "shift": 0x10, "alt": 0x12, "enter": 0x0D, "tab": 0x09, "esc": 0x1B,
+    "end": 0x23, "home": 0x24, "delete": 0x2E, "down": 0x28, "up": 0x26, "f4": 0x73,
+    "a": 0x41, "c": 0x43, "v": 0x56, "f": 0x46,
+}
+EXTENDED = {0x23, 0x24, 0x2E, 0x28, 0x26}     # navigatsiya tugmalari
+
+
+def _keybd(vk, up):
+    user32 = ctypes.windll.user32
+    flags = (0x0002 if up else 0) | (0x0001 if vk in EXTENDED else 0)
+    scan = user32.MapVirtualKeyW(vk, 0)
+    user32.keybd_event(vk, scan, flags, 0)
+
+
+def send_keys(*keys):
+    """send_keys('ctrl', 'v') — hamma tugmalarni bosib, teskari tartibda qo'yib yuborish."""
+    try:
+        ctypes.windll.user32
+    except AttributeError:          # Windows emas (sinov)
+        if len(keys) == 1:
+            pyautogui.press(keys[0])
+        else:
+            pyautogui.hotkey(*keys)
+        return
+    codes = [VK[k] for k in keys]
+    for c in codes:
+        _keybd(c, False)
+        time.sleep(0.03)
+    for c in reversed(codes):
+        _keybd(c, True)
+        time.sleep(0.03)
 
 
 class Stopped(Exception):
@@ -278,16 +313,13 @@ class Runner:
     def key(self, *keys):
         if self.stop.is_set():
             raise Stopped()
-        if len(keys) == 1:
-            pyautogui.press(keys[0])
-        else:
-            pyautogui.hotkey(*keys)
+        send_keys(*keys)
         self.wait(0.2)
 
     def paste(self, text):
         pyperclip.copy(str(text))
         self.wait(0.2)
-        pyautogui.hotkey("ctrl", "v")
+        send_keys("ctrl", "v")
         self.wait(0.35)
 
     def clear_text(self):
@@ -300,15 +332,15 @@ class Runner:
         sentinel = "~~spes~~"
         pyperclip.copy(sentinel)
         self.wait(0.15)
-        pyautogui.hotkey("ctrl", "a")
+        send_keys("ctrl", "a")
         self.wait(0.15)
-        pyautogui.hotkey("ctrl", "c")
+        send_keys("ctrl", "c")
         self.wait(0.6)
         try:
             txt = pyperclip.paste()
         except Exception:  # noqa
             return None
-        pyautogui.press("end")
+        send_keys("end")
         return None if txt == sentinel else " ".join(txt.split())
 
     def read_cell(self):
@@ -316,7 +348,7 @@ class Runner:
         sentinel = "~~spes~~"
         pyperclip.copy(sentinel)
         self.wait(0.15)
-        pyautogui.hotkey("ctrl", "c")
+        send_keys("ctrl", "c")
         self.wait(0.7)
         try:
             txt = pyperclip.paste()

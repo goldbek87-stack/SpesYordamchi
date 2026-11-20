@@ -10,7 +10,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from spec_parser import fmt, fmt_qty, parse_spec, plain
 
-VERSION = "3.5"
+VERSION = "3.6"
 
 
 class App(tk.Tk):
@@ -424,6 +424,13 @@ class App(tk.Tk):
                 "faqat dastur so'raganda «Davom» bosasiz.\n\n"
                 "To'xtatish: Esc tugmasi (yoki sichqonchani ekranning yuqori chap burchagiga olib boring)."):
             return
+        if not self._keyboard_selftest():
+            messagebox.showerror(
+                "Klaviatura sinovi",
+                "Dastur Ctrl+V (qo'yish) ni bosa olmadi — shuning uchun 1C'ga hech narsa yozilmaydi.\n\n"
+                "Klaviaturani ENG ga o'tkazib (Alt+Shift), qaytadan urinib ko'ring.\n"
+                "Shunda ham bo'lmasa — shu xabarni rasmga olib yuboring.")
+            return
         self.iconify()
         w, lbl, btns = self._mini("1C'ga yozilyapti")
         self._run_win = (w, lbl, btns)
@@ -443,6 +450,46 @@ class App(tk.Tk):
                 self.after(0, self._run_done, False, f"Xato: {e}")
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _keyboard_selftest(self):
+        """O'z oynamizda: matnni nusxalab Ctrl+V qilib ko'rish."""
+        try:
+            import pyperclip
+        except Exception:  # noqa
+            return True
+        t = tk.Toplevel(self)
+        t.title("Klaviatura sinovi…")
+        t.attributes("-topmost", True)
+        t.geometry(f"300x80+{self.winfo_rootx() + 300}+{self.winfo_rooty() + 200}")
+        var = tk.StringVar()
+        e = ttk.Entry(t, textvariable=var, width=30)
+        e.pack(padx=20, pady=20)
+        t.update()
+        t.lift()
+        t.focus_force()
+        e.focus_force()
+        t.update()
+        word = "sinov-12345"
+        ok = False
+        try:
+            pyperclip.copy(word)
+            self.after(150)
+            for _ in range(3):
+                var.set("")
+                e.focus_force()
+                t.update()
+                self.avto.send_keys("ctrl", "v")
+                for _ in range(10):
+                    t.update()
+                    self.after(50)
+                if word in var.get():
+                    ok = True
+                    break
+        finally:
+            t.destroy()
+        self.avto.Runner(self.cfg, lambda x: True, lambda x: None).log(
+            f"Klaviatura sinovi: {'OK' if ok else 'XATO'}")
+        return ok
 
     def _ask_from_thread(self, text):
         ev = threading.Event()
