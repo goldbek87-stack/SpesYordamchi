@@ -348,18 +348,27 @@ class Runner:
         raise Failed("Yangi накладная ochilmadi. 1C'da Продажи → Реализация ro'yxati ochiladimi — tekshiring, "
                      "yoki «O'rgatish» ni qaytadan qiling.")
 
-    def fill_field(self, name, text, settle=1.5, label=""):
+    def fill_field(self, name, text, settle=1.5, label="", choose=True):
+        """Maydonni bosib, tozalab, yozib, chiqqan ro'yxatdan birinchi variantni tanlash (↓ + Enter)."""
         for attempt in (1, 2):
             self.click(name)
+            self.wait(0.3)
             self.key("shift", "f4")          # 1C: maydonni tozalash
+            self.wait(0.3)
             self.paste(text)
-            self.wait(settle)
-            self.key("tab")
-            self.wait(1.0)
+            self.wait(settle)                # variantlar ro'yxati chiqsin
+            if choose:
+                self.key("down")             # ro'yxatdagi birinchi variant
+                self.wait(0.4)
+                self.key("enter")            # tanlash
+                self.wait(1.2)
+            else:
+                self.key("tab")
+                self.wait(0.8)
             self.click(name)
             got = self.read_field()
             self.key("tab")
-            self.wait(0.4)
+            self.wait(0.5)
             self.log(f"   {label}: yozildi {text!r}, 1C'da {got!r}")
             if got is None or got.strip():
                 return got
@@ -437,7 +446,7 @@ class Runner:
             if not self.anchor_ok("doc"):
                 raise Failed("Накладная oynasi ko'rinmayapti — hech narsa yozilmadi.")
             self.status("Sana…")
-            g_date = self.fill_field("date", date_text, 0.3, "Sana")
+            g_date = self.fill_field("date", date_text, 0.3, "Sana", choose=False)
             self.status("Kontragent (INN bo'yicha)…")
             g_k = self.fill_field("kontragent", spec.buyer_inn, 2.5, "Kontragent")
             self.status("Shartnoma…")
