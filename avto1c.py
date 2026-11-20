@@ -3,6 +3,7 @@
 Har bir qadamdan keyin ekran o'zgarishini kutadi va iloji bo'lsa yozilgan qiymatni
 Ctrl+C orqali qayta o'qib tekshiradi. Tekshiruvdan o'tmasa — to'xtaydi va sababini aytadi.
 """
+import base64
 import ctypes
 import json
 import os
@@ -48,7 +49,8 @@ DEFAULT = {
     "tezlik": 1.0,                 # 1 = oddiy; 2 = 2 barobar sekin
     "qadamma_qadam": True,
     "shartnoma_chiziq_slash": True,
-    "cfg_versiya": 4,
+    "anchors": {},
+    "cfg_versiya": 5,
 }
 
 
@@ -72,8 +74,35 @@ def save_config(cfg):
         json.dump(cfg, f, ensure_ascii=False, indent=2)
 
 
+# Belgi (anchor): o'rgatishda olingan kichik rasm — ish paytida "to'g'ri oyna ochiqmi?" deb tekshiriladi.
+#   doc    — накладная oynasi: «Подбор» tugmasi atrofi
+#   podbor — Подбор oynasi: «Перенести в документ» tugmasi atrofi
+#   dlg    — Количество/Цена/Сумма oynasi: «OK» tugmasi atrofi
+ANCHORS = {"doc": "podbor", "podbor": "perenesti", "dlg": "dlg_ok"}
+PATCH_W, PATCH_H = 80, 28
+
+
+def grab_patch(img, x, y):
+    box = (x - PATCH_W // 2, y - PATCH_H // 2, x + PATCH_W // 2, y + PATCH_H // 2)
+    return img.convert("L").crop(box)
+
+
+def patch_to_cfg(patch):
+    return base64.b64encode(patch.tobytes()).decode("ascii")
+
+
+def patch_from_cfg(data):
+    from PIL import Image
+    return Image.frombytes("L", (PATCH_W, PATCH_H), base64.b64decode(data))
+
+
+def patch_diff(a, b):
+    from PIL import ImageChops, ImageStat
+    return ImageStat.Stat(ImageChops.difference(a, b)).mean[0]
+
+
 def is_calibrated(cfg):
-    return all(k in cfg["points"] for k in CLICK_KEYS)
+    return all(k in cfg["points"] for k in CLICK_KEYS) and all(k in cfg.get("anchors", {}) for k in ANCHORS)
 
 
 def _norm(t):
@@ -213,6 +242,29 @@ class Runner:
         self.log(f"   ekran o'zgarmadi: {what}")
         return False
 
+    def anchor_ok(self, name):
+        a = self.cfg.get("anchors", {}).get(name)
+        if not a:
+            return True
+        x, y = self.cfg["points"][ANCHORS[name]]
+        try:
+            cur = grab_patch(pyautogui.screenshot(), x, y)
+        except Exception:  # noqa
+            return True
+        d = patch_diff(cur, patch_from_cfg(a))
+        return d < 22
+
+    def wait_anchor(self, name, present=True, timeout=10.0):
+        """Belgi paydo bo'lguncha (yoki yo'qolguncha) kutish."""
+        end = time.time() + timeout * float(self.cfg.get("tezlik", 1.0))
+        while time.time() < end:
+            if self.anchor_ok(name) == present:
+                self.wait(0.4)
+                return True
+            self.wait(0.3)
+        self.log(f"   belgi '{name}' {'chiqmadi' if present else 'yo`qolmadi'}")
+        return False
+
     def click(self, name, double=False):
         x, y = self.cfg["points"][name]
         if double:
@@ -276,22 +328,23 @@ class Runner:
 
     # ---------- qadamlar ----------
     def open_new_doc(self):
-        self.status("Yangi накладная ochilyapti…")
-        self.click("prodaja")
-        self.wait(1.2)
-        b = self.shot()
-        self.click("real_link")
-        self.wait_change(b, 6, "Реализация ro'yxati")
-        self.wait(1.0)
-        b = self.shot()
-        self.click("real_btn")
-        if not self.wait_change(b, 4, "Реализация menyusi"):
-            raise Failed("«Реализация ▾» tugmasi bosildi, lekin menyu ochilmadi.")
-        b = self.shot()
-        self.click("tovary_nakl")
-        if not self.wait_change(b, 8, "yangi накладная"):
-            raise Failed("«Товары (накладная)» bosildi, lekin yangi hujjat ochilmadi.")
-        self.wait(1.5)
+        for attempt in (1, 2):
+            self.status("Yangi накладная ochilyapti…")
+            self.click("prodaja")
+            self.wait(1.5)
+            self.click("real_link")
+            self.wait(3.0)                      # ro'yxat ochilsin
+            self.click("real_btn")
+            self.wait(1.5)                      # menyu ochilsin
+            self.click("tovary_nakl")
+            if self.wait_anchor("doc", True, 12):
+                self.wait(1.0)
+                return
+            self.log(f"   yangi накладная ochilmadi (urinish {attempt})")
+            self.key("esc")                     # ochiq qolgan menyuni yopish
+            self.wait(1.0)
+        raise Failed("Yangi накладная ochilmadi. 1C'da Продажи → Реализация ro'yxati ochiladimi — tekshiring, "
+                     "yoki «O'rgatish» ni qaytadan qiling.")
 
     def fill_field(self, name, text, settle=1.5, label=""):
         for attempt in (1, 2):
@@ -313,6 +366,8 @@ class Runner:
 
     def add_item(self, i, n, it):
         self.status(f"Mahsulot {i}/{n}: {it.name}")
+        if not self.anchor_ok("podbor"):
+            raise Failed("Подбор oynasi ko'rinmayapti — to'xtatildi.")
         # qidiruv
         self.click("qidiruv")
         self.clear_text()
@@ -329,9 +384,8 @@ class Runner:
             self.manual(i, n, it, f"1C'da birinchi chiqqan: «{found or '(hech narsa topilmadi)'}»")
             return
         # miqdor oynasi
-        b = self.shot()
         self.click("first_row", double=True)
-        if not self.wait_change(b, 5, "miqdor oynasi"):
+        if not self.wait_anchor("dlg", True, 6):
             self.manual(i, n, it, "Mahsulot ikki marta bosildi, lekin Количество/Цена/Сумма oynasi ochilmadi.")
             return
         for fld, val in (("dlg_qty", it.qty_text), ("dlg_price", it.price_text), ("dlg_sum", it.amount_text)):
@@ -350,11 +404,12 @@ class Runner:
             self.paste(it.amount_text)
             self.key("tab")
             self.wait(0.4)
-        b = self.shot()
         self.click("dlg_ok")
-        if not self.wait_change(b, 4, "oyna yopilishi"):
+        if not self.wait_anchor("dlg", False, 5):
             self.key("enter")
             self.wait(1.0)
+        if not self.wait_anchor("podbor", True, 6):
+            raise Failed(f"{i}-mahsulotdan keyin Подбор oynasi ko'rinmay qoldi.")
 
     def manual(self, i, n, it, why):
         self.log(f"[{i}] QO'LDA: {why}")
@@ -377,6 +432,8 @@ class Runner:
             self.wait(1.0)
             self.open_new_doc()
 
+            if not self.anchor_ok("doc"):
+                raise Failed("Накладная oynasi ko'rinmayapti — hech narsa yozilmadi.")
             self.status("Sana…")
             g_date = self.fill_field("date", date_text, 0.3, "Sana")
             self.status("Kontragent (INN bo'yicha)…")
@@ -398,11 +455,12 @@ class Runner:
                 "keyin «Davom».")
 
             self.status("Подбор ochilyapti…")
-            b = self.shot()
+            if not self.anchor_ok("doc"):
+                raise Failed("Накладная oynasi ko'rinmayapti — Подбор bosilmadi.")
             self.click("podbor")
-            if not self.wait_change(b, 8, "Подбор"):
+            if not self.wait_anchor("podbor", True, 12):
                 raise Failed("«Подбор» bosildi, lekin Подбор oynasi ochilmadi.")
-            self.wait(1.0)
+            self.wait(0.8)
 
             n = len(items)
             for i, it in enumerate(items, 1):
@@ -414,9 +472,10 @@ class Runner:
                         "To'g'ri bo'lsa «Davom». Xato bo'lsa — 1C'da tuzatib, keyin «Davom».")
 
             self.status("Hujjatga o'tkazilyapti…")
-            b = self.shot()
+            if not self.anchor_ok("podbor"):
+                raise Failed("Подбор oynasi ko'rinmayapti — «Перенести в документ» bosilmadi.")
             self.click("perenesti")
-            self.wait_change(b, 6, "Перенести")
+            self.wait_anchor("podbor", False, 8)
             self.log("=== TUGADI")
             return True
         except pyautogui.FailSafeException:

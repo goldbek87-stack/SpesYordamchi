@@ -10,7 +10,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from spec_parser import fmt, fmt_qty, parse_spec, plain
 
-VERSION = "3.2"
+VERSION = "3.3"
 
 
 class App(tk.Tk):
@@ -212,12 +212,28 @@ class App(tk.Tk):
             self.tree.see(n)
 
     # ================= kichik oyna (o'rgatish/ish paytida) =================
-    def _mini(self, title):
+    def _free_spot(self, ww, hh):
+        """Kichik oyna uchun 1C'da bosiladigan birorta nuqta tushmaydigan joy."""
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        pts = list(self.cfg.get("points", {}).values())
+        cands = [(sw - ww - 8, sh - hh - 60), (8, sh - hh - 60), (sw - ww - 8, 60), (8, 60),
+                 (sw // 2 - ww // 2, sh - hh - 60), (sw // 2 - ww // 2, 60)]
+        best, best_n = cands[0], 10 ** 9
+        for x, y in cands:
+            n = sum(1 for px, py in pts if x - 40 <= px <= x + ww + 40 and y - 40 <= py <= y + hh + 40)
+            if n < best_n:
+                best, best_n = (x, y), n
+            if n == 0:
+                break
+        return best
+
+    def _mini(self, title, ww=360, hh=230):
         w = tk.Toplevel(self)
         w.title(title)
         w.attributes("-topmost", True)
-        sh = self.winfo_screenheight()
-        w.geometry(f"360x230+8+{sh - 320}")    # pastki chap burchak (1C bo'limlar menyusi ustida)
+        x, y = self._free_spot(ww, hh)
+        w.geometry(f"{ww}x{hh}+{x}+{y}")
+        w._size = (ww, hh)
         lbl = ttk.Label(w, text="", wraplength=340, font=("Segoe UI", 10), justify="left")
         lbl.pack(fill="both", expand=True, padx=10, pady=8)
         btns = ttk.Frame(w)
@@ -242,11 +258,20 @@ class App(tk.Tk):
                 "Oxirida ochilgan sinov hujjatini SAQLAMASDAN yopasiz.\n\nTayyormisiz?"):
             return
         self.iconify()
-        w, lbl, btns = self._mini("O'rgatish")
-        w.geometry(f"400x260+8+{self.winfo_screenheight() - 350}")
+        w, lbl, btns = self._mini("O'rgatish (oynani surib qo'ysa bo'ladi)")
+        w.geometry(f"400x270+{self.winfo_screenwidth() - 410}+{self.winfo_screenheight() - 340}")
         points = {}
+        shots = {}
         steps = list(self.avto.POINTS)
-        st = {"i": 0, "lst": None, "got": None}
+        st = {"i": 0, "lst": None, "got": None, "rect": (0, 0, 0, 0)}
+
+        def upd_rect(_=None):
+            try:
+                st["rect"] = self._rect(w)
+            except tk.TclError:
+                pass
+        w.bind("<Configure>", upd_rect)
+        SNAP_AFTER = {"sklad": "doc", "first_row": "podbor", "_open_dlg": "dlg"}
 
         def stop_listener():
             if st["lst"]:
@@ -267,7 +292,22 @@ class App(tk.Tk):
 
         def finish():
             stop_listener()
+            anchors = {}
+            for name, img in shots.items():
+                pkey = self.avto.ANCHORS[name]
+                if pkey in points:
+                    x, y = points[pkey]
+                    anchors[name] = self.avto.patch_to_cfg(self.avto.grab_patch(img, x, y))
+            self.cfg["anchors"] = anchors
             self.cfg["points"] = points
+            if len(anchors) < len(self.avto.ANCHORS):
+                self.avto.save_config(self.cfg)
+                w.destroy()
+                self.deiconify()
+                self._update_calib_lbl()
+                messagebox.showerror("O'rgatish", "Ekran rasmini olib bo'lmadi — o'rgatish to'liq emas.\n"
+                                                  "Qaytadan «O'rgatish» ni bosing.")
+                return
             self.avto.save_config(self.cfg)
             w.destroy()
             self.deiconify()
@@ -294,8 +334,8 @@ class App(tk.Tk):
                 st["got"] = (x, y)
 
             def start_listen():
-                st["lst"] = self.avto.capture_click(on_point, ignore_rect=lambda: rect)
-            rect = self._rect(w)
+                upd_rect()
+                st["lst"] = self.avto.capture_click(on_point, ignore_rect=lambda: st["rect"])
             self.after(600, start_listen)    # avvalgi bosishlar hisobga olinmasin
             self.after(700, poll)
 
@@ -320,6 +360,23 @@ class App(tk.Tk):
             w.lift()
 
         def next_step():
+            key = steps[st["i"]][0]
+            if key in SNAP_AFTER:
+                # 1C oynasini rasmga olish (o'z oynamizni yashirib)
+                w.withdraw()
+                self.update()
+
+                def snap():
+                    try:
+                        import pyautogui
+                        shots[SNAP_AFTER[key]] = pyautogui.screenshot()
+                    finally:
+                        w.deiconify()
+                        w.attributes("-topmost", True)
+                        st["i"] += 1
+                        arm()
+                self.after(500, snap)
+                return
             st["i"] += 1
             arm()
 
@@ -387,7 +444,8 @@ class App(tk.Tk):
     def _show_ask(self, text, ev, box):
         w, lbl, btns = self._run_win
         lbl.config(text=text)
-        w.geometry(f"420x300+8+{self.winfo_screenheight() - 390}")
+        x, y = self._free_spot(420, 300)
+        w.geometry(f"420x300+{x}+{y}")
         for c in btns.winfo_children():
             c.destroy()
 
@@ -396,7 +454,8 @@ class App(tk.Tk):
             for c in btns.winfo_children():
                 c.destroy()
             lbl.config(text="Davom etyapti…")
-            w.geometry(f"360x230+8+{self.winfo_screenheight() - 320}")
+            x, y = self._free_spot(360, 230)
+            w.geometry(f"360x230+{x}+{y}")
             self.after(400, ev.set)     # oyna yopilib, 1C'ga fokus qaytishi uchun
 
         ttk.Button(btns, text="Davom ▶", command=lambda: answer(True)).pack(side="left")
