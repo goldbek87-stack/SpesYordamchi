@@ -10,7 +10,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from spec_parser import fmt, fmt_qty, parse_spec, plain
 
-VERSION = "2.4"
+VERSION = "3.0"
 
 
 class App(tk.Tk):
@@ -235,10 +235,11 @@ class App(tk.Tk):
             return
         if not messagebox.askokcancel(
                 "O'rgatish",
-                "1C'da yangi «Реализация товаров: Накладная» oynasini oching va 1C oynasini "
-                "TO'LIQ EKRAN (maximize) holatida qoldiring.\n\n"
-                "Dastur ketma-ket so'raydi — 1C'dagi o'sha joyni sichqoncha bilan bir marta bosasiz, "
-                "keyin kichik oynadagi «Keyingi ▶» ni bosasiz.\n\nTayyormisiz?"):
+                "1C'ni oching va oynasini TO'LIQ EKRAN (maximize) qiling. Hech qanday hujjat ochish shart emas — "
+                "dastur o'zi boshidan ko'rsatadi.\n\n"
+                "Dastur 17 ta qadamni ketma-ket so'raydi. Har birida 1C'dagi o'sha joyni bir marta bosasiz, "
+                "keyin kichik oynadagi «Keyingi ▶» ni bosasiz.\n\n"
+                "Oxirida ochilgan sinov hujjatini SAQLAMASDAN yopasiz.\n\nTayyormisiz?"):
             return
         self.iconify()
         w, lbl, btns = self._mini("O'rgatish")
@@ -272,16 +273,22 @@ class App(tk.Tk):
             self.deiconify()
             self._update_calib_lbl()
             messagebox.showinfo("O'rgatish", "Tayyor! Joylar eslab qolindi.\n\n"
-                                             "Endi 1C'dagi bu накладная'ni yopib (saqlamasdan), "
-                                             "yangisini ochib «1C'GA YOZISH» ni sinab ko'ring.")
+                                             "Endi 1C'dagi Подбор oynasini va sinov накладная'sini SAQLAMASDAN "
+                                             "yoping (Нет / Не сохранять).\n\n"
+                                             "Keyin «1C'GA YOZISH» ni bosing — dastur hujjatni o'zi ochadi.")
 
         def arm():
             """Joriy qadam uchun bosishni kutish."""
-            key, text = steps[st["i"]]
+            key, text, kind = steps[st["i"]]
             st["got"] = None
-            lbl.config(text=f"Qadam {st['i'] + 1}/{len(steps)}\n\n{text}\n\n⏳ 1C'da bosishingizni kutyapman…")
             clear_btns()
             ttk.Button(btns, text="Bekor qilish", command=cancel).pack(side="right")
+            if kind == "info":
+                lbl.config(text=f"Qadam {st['i'] + 1}/{len(steps)}\n\n{text}")
+                ttk.Button(btns, text="Keyingi ▶", command=next_step).pack(side="left")
+                w.lift()
+                return
+            lbl.config(text=f"Qadam {st['i'] + 1}/{len(steps)}\n\n{text}\n\n⏳ 1C'da bosishingizni kutyapman…")
 
             def on_point(x, y):          # pynput oqimidan — faqat qiymatni saqlaymiz
                 st["got"] = (x, y)
@@ -299,7 +306,7 @@ class App(tk.Tk):
                 self.after(100, poll)
                 return
             stop_listener()
-            key, text = steps[st["i"]]
+            key, text, kind = steps[st["i"]]
             points[key] = list(st["got"])
             lbl.config(text=f"Qadam {st['i'] + 1}/{len(steps)}\n\n{text}\n\n"
                             f"✔ Eslab qolindi: {st['got'][0]}, {st['got'][1]}\n\n"
@@ -336,8 +343,9 @@ class App(tk.Tk):
         self.avto.save_config(self.cfg)
         if not messagebox.askokcancel(
                 "1C'ga yozish",
-                "1C'da YANGI «Реализация товаров: Накладная» oynasi ochiq va to'liq ekran holatida bo'lsin.\n\n"
-                "«OK» bosgandan keyin 3 soniyada boshlanadi. Ish paytida sichqoncha va klaviaturaga tegmang.\n\n"
+                "1C ochiq bo'lsin (hujjat ochish shart emas — dastur o'zi ochadi).\n\n"
+                "«OK» bosgandan keyin boshlanadi. Ish paytida sichqoncha va klaviaturaga tegmang — "
+                "faqat dastur so'raganda «Davom» bosasiz.\n\n"
                 "To'xtatish: Esc tugmasi (yoki sichqonchani ekranning yuqori chap burchagiga olib boring)."):
             return
         self.iconify()
@@ -353,6 +361,8 @@ class App(tk.Tk):
                 self.after(0, self._run_done, True, "")
             except self.avto.Stopped:
                 self.after(0, self._run_done, False, "To'xtatildi.")
+            except self.avto.Failed as e:
+                self.after(0, self._run_done, False, f"Bajarilmadi: {e}")
             except Exception as e:  # noqa
                 self.after(0, self._run_done, False, f"Xato: {e}")
 
