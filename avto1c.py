@@ -393,8 +393,10 @@ class Runner:
             self.paste(text)
             self.wait(settle)                # variantlar ro'yxati chiqsin
             if choose:
-                for _ in range(k if want else 1):
-                    self.key("down")         # k-variantgacha tushish
+                # 1C ro'yxatida 1-variant o'zi tanlangan (sariq) turadi: 1-urinishda ↓ bosilmaydi,
+                # 2-urinishda bitta ↓ (2-variant), va hokazo.
+                for _ in range(k - 1 if want else 0):
+                    self.key("down")
                     self.wait(0.25)
                 self.key("enter")            # tanlash
                 self.wait(1.2)
