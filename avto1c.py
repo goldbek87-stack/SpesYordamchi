@@ -26,16 +26,16 @@ POINTS = [
     ("real_btn", "Ro'yxat oynasidagi yashil «⊕ Реализация ▾» tugmasini bosing.", "click"),
     ("tovary_nakl", "Chiqqan menyudagi «Товары (накладная)» ni bosing (yangi накладная ochiladi).", "click"),
     ("date", "Yangi накладная'da «Накладная №» yonidagi «от:» SANA maydonini bosing.", "click"),
-    ("kontragent", "«Контрагент» maydonini bosing.", "click"),
-    ("dogovor", "«Договор» maydonini bosing.", "click"),
-    ("sklad", "«Склад» maydonini bosing.", "click"),
+    ("kontragent", "«Контрагент» maydonini bosing, keyin istalgan kontragentni TANLANG (Подбор ishlashi uchun kerak).", "click"),
+    ("dogovor", "«Договор» maydonini bosing, keyin shartnomani TANLANG.", "click"),
+    ("sklad", "«Склад» maydonini bosing, keyin «Шуруп склад» ni TANLANG.", "click"),
     ("podbor", "Товары ostidagi «Подбор» tugmasini bosing (Подбор oynasi ochiladi).", "click"),
     ("qidiruv", "Подбор oynasida O'NG tomondagi qidiruv maydonini bosing (ro'yxat tepasida, lupa 🔍 yonida).", "click"),
     ("first_row", "Mahsulotlar ro'yxatining BIRINCHI qatoridagi NOMNI bir marta bosing.", "click"),
     ("_open_dlg", "Endi o'sha mahsulotni IKKI MARTA bosing — Количество/Цена/Сумма oynasi ochilsin.\n"
                   "Oyna ochilgach «Keyingi ▶» ni bosing.", "info"),
-    ("dlg_qty", "Oynadagi «Количество» maydonini bosing.", "click"),
-    ("dlg_price", "Oynadagi «Цена» maydonini bosing.", "click"),
+    ("dlg_qty", "Oynadagi «Количество» maydonini bosing va 1 deb yozing.", "click"),
+    ("dlg_price", "Oynadagi «Цена» maydonini bosing, 1 deb yozing va Tab bosing — Сумма chiqadi.", "click"),
     ("dlg_sum", "Oynadagi «Сумма» maydonini bosing.", "click"),
     ("dlg_ok", "Oynadagi «OK» tugmasini bosing.", "click"),
     ("perenesti", "Подбор oynasidagi «Перенести в документ» tugmasini bosing.", "click"),
@@ -96,31 +96,60 @@ def num_equal(text, expected):
 
 
 # ---------- 1C oynasini topish va oldinga chiqarish (Windows) ----------
-def activate_1c():
-    """'1С:Предприятие' oynasini topib, oldinga chiqaradi va to'liq ekran qiladi. Topilmasa False."""
+def window_titles():
+    """Ko'rinib turgan barcha oynalar: [(hwnd, nom)]."""
     try:
-        user32 = ctypes.windll.user32
-    except AttributeError:
-        return True     # Windows emas (sinov)
-    found = []
+        from ctypes import wintypes
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+    except (AttributeError, OSError):
+        return []
+    user32.EnumWindows.argtypes = [ctypes.c_void_p, wintypes.LPARAM]
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    out = []
+    proto = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
-    @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
     def cb(hwnd, _):
-        if user32.IsWindowVisible(hwnd):
-            n = user32.GetWindowTextLengthW(hwnd)
-            buf = ctypes.create_unicode_buffer(n + 1)
-            user32.GetWindowTextW(hwnd, buf, n + 1)
-            if "1С:Предприятие" in buf.value or "1C:Предприятие" in buf.value:
-                found.append(hwnd)
+        try:
+            if user32.IsWindowVisible(hwnd):
+                n = user32.GetWindowTextLengthW(hwnd)
+                if n:
+                    buf = ctypes.create_unicode_buffer(n + 1)
+                    user32.GetWindowTextW(hwnd, buf, n + 1)
+                    out.append((hwnd, buf.value))
+        except Exception:  # noqa
+            pass
         return True
-    user32.EnumWindows(cb, 0)
-    if not found:
+    cb_ptr = proto(cb)
+    user32.EnumWindows(ctypes.cast(cb_ptr, ctypes.c_void_p), 0)
+    return out
+
+
+def activate_1c(log=print):
+    """1C oynasini topib oldinga chiqaradi va to'liq ekran qiladi.
+    Topilmasa ham False qaytaradi, lekin ish davom etadi (birinchi bosish 1C'ni oldinga chiqaradi)."""
+    titles = window_titles()
+    if not titles:
         return False
-    h = found[0]
-    user32.ShowWindow(h, 3)          # SW_MAXIMIZE
-    pyautogui.press("alt")           # Windows fokus cheklovini chetlab o'tish uchun
-    user32.SetForegroundWindow(h)
-    time.sleep(0.5)
+    keys = ("1С:Предприятие", "1C:Предприятие", "Предприятие", "MEXMASH")
+    h = next((hw for hw, t in titles if any(k.lower() in t.lower() for k in keys)
+              and "Spetsifikatsiya" not in t), None)
+    if not h:
+        log("   1C oynasi topilmadi. Ochiq oynalar: " + " | ".join(t for _, t in titles)[:800])
+        return False
+    try:
+        from ctypes import wintypes
+        user32 = ctypes.WinDLL("user32")
+        user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+        user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+        user32.ShowWindow(h, 3)          # SW_MAXIMIZE
+        pyautogui.press("alt")
+        user32.SetForegroundWindow(h)
+        time.sleep(0.6)
+    except Exception as e:  # noqa
+        log(f"   1C oynasini oldinga chiqarib bo'lmadi: {e}")
+        return False
     return True
 
 
@@ -343,8 +372,8 @@ class Runner:
         self.log(f"=== BOSHLANDI: spes №{spec.spec_no}, {spec.buyer_name}, {len(items)} ta mahsulot")
         try:
             self.status("1C oynasi qidirilyapti…")
-            if not activate_1c():
-                raise Failed("1C (1С:Предприятие) oynasi topilmadi. Avval 1C'ni oching.")
+            if not activate_1c(self.log):
+                self.log("   1C oynasi avtomatik topilmadi — davom etamiz (1C ekranda turibdi deb)")
             self.wait(1.0)
             self.open_new_doc()
 
