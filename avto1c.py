@@ -115,13 +115,28 @@ class Runner:
         self.key("tab")
         self.wait(0.8)
 
+    def clear_text(self):
+        """Matn maydonidagi eski yozuvni o'chirish (End, Shift+Home, Delete)."""
+        self.key("end")
+        self.key("shift", "home")
+        self.key("delete")
+        self.wait(0.2)
+
+    def log(self, text):
+        try:
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+            with open(os.path.join(CONFIG_DIR, "log.txt"), "a", encoding="utf-8") as f:
+                f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + text + "\n")
+        except OSError:
+            pass
+
     def read_cell(self):
         """Tanlangan qator nomini Ctrl+C orqali o'qish. O'qib bo'lmasa — None."""
         sentinel = "~~spes~~"
         pyperclip.copy(sentinel)
         self.wait(0.1)
         pyautogui.hotkey("ctrl", "c")
-        self.wait(0.5)
+        self.wait(0.8)
         try:
             txt = pyperclip.paste()
         except Exception:  # noqa
@@ -145,6 +160,7 @@ class Runner:
     # --- asosiy ish ---
     def run(self, spec, date_text, items):
         self._kl.start()
+        self.log(f"=== BOSHLANDI: spes №{spec.spec_no}, {spec.buyer_name}, {len(items)} ta mahsulot")
         try:
             self.status("3 soniyadan keyin boshlanadi… (to'xtatish: Esc)")
             self.wait(3)
@@ -175,19 +191,23 @@ class Runner:
                 self.status(f"Mahsulot {i}/{n}: {it.name}")
                 # 1) qidiruv maydoniga qidiriladigan matnni yozish
                 self.click("qidiruv")
-                self.key("ctrl", "a")
+                self.clear_text()
                 self.paste(it.search)
+                self.log(f"[{i}] qidiruv: {it.search}")
                 self.key("enter")
                 self.wait(2.0)
                 # 2) birinchi topilgan qatorni tanlash va nomini tekshirish
                 self.click("first_row")
+                self.wait(0.4)
                 found = self.read_cell()
+                self.log(f"[{i}] 1C'da tanlangan: {found!r}")
                 if found is not None and not same_product(it.search, found):
                     self.manual(i, n, it, f"1C'da birinchi chiqqan: «{found or '(hech narsa topilmadi)'}»")
                     continue
-                # 3) miqdor oynasi
-                self.key("enter")
-                self.wait(1.2)
+                # 3) mahsulotni ikki marta bosish -> Количество/Цена/Сумма oynasi
+                x, y = self.cfg["points"]["first_row"]
+                pyautogui.doubleClick(x, y)
+                self.wait(1.5)
                 for step in self.cfg["miqdor_oynasi"]:
                     if step == "QTY":
                         self.paste(it.qty_text)
