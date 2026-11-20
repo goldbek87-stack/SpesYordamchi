@@ -10,7 +10,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from spec_parser import fmt, fmt_qty, parse_spec, plain
 
-VERSION = "2.1"
+VERSION = "2.2"
 
 
 class App(tk.Tk):
@@ -138,7 +138,8 @@ class App(tk.Tk):
         self.file_lbl.config(text=os.path.basename(path))
         self.fields["inn"].set(s.buyer_inn)
         self.fields["buyer"].set(s.buyer_name)
-        self.fields["contract_no"].set(s.contract_no)
+        self.fields["contract_no"].set(s.contract_no.replace("-", "/")
+                                       if self.cfg.get("shartnoma_chiziq_slash", True) else s.contract_no)
         self.fields["contract_date"].set(s.contract_date)
         self.refresh_rows()
         ok = s.jami_total is not None and s.sum_total == s.jami_total
@@ -236,45 +237,86 @@ class App(tk.Tk):
                 "O'rgatish",
                 "1C'da yangi «Реализация товаров: Накладная» oynasini oching va 1C oynasini "
                 "TO'LIQ EKRAN (maximize) holatida qoldiring.\n\n"
-                "Keyin dastur ketma-ket so'raydi — 1C'dagi o'sha joyni sichqoncha bilan bir marta bosasiz.\n"
-                "Dastur bosilgan joylarni eslab qoladi.\n\nTayyormisiz?"):
+                "Dastur ketma-ket so'raydi — 1C'dagi o'sha joyni sichqoncha bilan bir marta bosasiz, "
+                "keyin kichik oynadagi «Keyingi ▶» ni bosasiz.\n\nTayyormisiz?"):
             return
         self.iconify()
         w, lbl, btns = self._mini("O'rgatish")
+        w.geometry(f"400x260+8+{self.winfo_screenheight() - 350}")
         points = {}
         steps = list(self.avto.POINTS)
-        state = {"i": 0, "lst": None}
+        st = {"i": 0, "lst": None, "got": None}
+
+        def stop_listener():
+            if st["lst"]:
+                try:
+                    st["lst"].stop()
+                except Exception:  # noqa
+                    pass
+                st["lst"] = None
+
+        def clear_btns():
+            for c in btns.winfo_children():
+                c.destroy()
 
         def cancel():
-            if state["lst"]:
-                state["lst"].stop()
+            stop_listener()
             w.destroy()
             self.deiconify()
 
-        ttk.Button(btns, text="Bekor qilish", command=cancel).pack(side="right")
+        def finish():
+            stop_listener()
+            self.cfg["points"] = points
+            self.avto.save_config(self.cfg)
+            w.destroy()
+            self.deiconify()
+            self._update_calib_lbl()
+            messagebox.showinfo("O'rgatish", "Tayyor! Joylar eslab qolindi.\n\n"
+                                             "Endi 1C'dagi bu накладная'ni yopib (saqlamasdan), "
+                                             "yangisini ochib «1C'GA YOZISH» ni sinab ko'ring.")
 
-        def ask_next():
-            i = state["i"]
-            if i >= len(steps):
-                self.cfg["points"] = points
-                self.avto.save_config(self.cfg)
-                w.destroy()
-                self.deiconify()
-                self._update_calib_lbl()
-                messagebox.showinfo("O'rgatish", "Tayyor! Joylar eslab qolindi.\n\n"
-                                                 "1C'dagi Подбор oynasini yopib, накладная'ni yopsangiz bo'ladi.")
+        def arm():
+            """Joriy qadam uchun bosishni kutish."""
+            key, text = steps[st["i"]]
+            st["got"] = None
+            lbl.config(text=f"Qadam {st['i'] + 1}/{len(steps)}\n\n{text}\n\n⏳ 1C'da bosishingizni kutyapman…")
+            clear_btns()
+            ttk.Button(btns, text="Bekor qilish", command=cancel).pack(side="right")
+
+            def on_point(x, y):          # pynput oqimidan — faqat qiymatni saqlaymiz
+                st["got"] = (x, y)
+
+            def start_listen():
+                st["lst"] = self.avto.capture_click(on_point, ignore_rect=lambda: rect)
+            rect = self._rect(w)
+            self.after(600, start_listen)    # avvalgi bosishlar hisobga olinmasin
+            self.after(700, poll)
+
+        def poll():
+            if not w.winfo_exists():
                 return
-            key, text = steps[i]
-            lbl.config(text=f"Qadam {i + 1}/{len(steps)}\n\n{text}")
-            state["lst"] = self.avto.capture_click(lambda x, y: self.after(0, got, key, x, y),
-                                                   ignore_rect=lambda: self._rect(w))
+            if st["got"] is None:
+                self.after(100, poll)
+                return
+            stop_listener()
+            key, text = steps[st["i"]]
+            points[key] = list(st["got"])
+            lbl.config(text=f"Qadam {st['i'] + 1}/{len(steps)}\n\n{text}\n\n"
+                            f"✔ Eslab qolindi: {st['got'][0]}, {st['got'][1]}\n\n"
+                            "To'g'ri joyni bosgan bo'lsangiz — «Keyingi ▶».\nNoto'g'ri bo'lsa — «Qaytadan».")
+            clear_btns()
+            last = st["i"] == len(steps) - 1
+            ttk.Button(btns, text="Tugatish ✔" if last else "Keyingi ▶",
+                       command=lambda: (finish() if last else next_step())).pack(side="left")
+            ttk.Button(btns, text="Qaytadan", command=arm).pack(side="left", padx=8)
+            ttk.Button(btns, text="Bekor qilish", command=cancel).pack(side="right")
+            w.lift()
 
-        def got(key, x, y):
-            points[key] = [x, y]
-            state["i"] += 1
-            self.after(900 if key == "podbor" else 300, ask_next)   # Подбор ochilishini kutish
+        def next_step():
+            st["i"] += 1
+            arm()
 
-        ask_next()
+        arm()
 
     # ================= 1C'GA YOZISH =================
     def start_run(self):

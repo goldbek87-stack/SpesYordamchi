@@ -35,7 +35,8 @@ DEFAULT = {
     # Miqdor oynasida bosiladigan tugmalar ketma-ketligi:
     # QTY = miqdor, SUM = summa, TAB, ENTER, CTRL+ENTER
     "miqdor_oynasi": ["QTY", "TAB", "TAB", "SUM", "TAB", "ENTER"],
-    "qadamma_qadam": True,         # har mahsulotdan keyin to'xtab so'rash (birinchi sinovlar uchun)
+    "qadamma_qadam": True,
+    "shartnoma_chiziq_slash": True,  # spetsifikatsiyadagi 06-2026 -> 1C'dagi 06/2026         # har mahsulotdan keyin to'xtab so'rash (birinchi sinovlar uchun)
 }
 
 
