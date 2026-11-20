@@ -21,7 +21,10 @@ POINTS = [
     ("dogovor", "«Договор» maydonini bosing."),
     ("sklad", "«Склад» maydonini bosing."),
     ("podbor", "Товары ostidagi «Подбор» tugmasini bosing (Подбор oynasi ochiladi)."),
-    ("first_row", "Подбор oynasida mahsulotlar ro'yxatining BIRINCHI qatorini bosing."),
+    ("qidiruv", "Подбор oynasida O'NG tomondagi qidiruv maydonini bosing (mahsulotlar ro'yxati tepasida, "
+                "lupa 🔍 belgisi yonidagi oq maydon)."),
+    ("first_row", "Подбор oynasida mahsulotlar ro'yxatining BIRINCHI qatoridagi NOMNI bosing "
+                  "(«Наименование» ustunida)."),
     ("perenesti", "Подбор oynasidagi «Перенести в документ» tugmasini bosing."),
 ]
 
@@ -111,6 +114,29 @@ class Runner:
         self.key("tab")
         self.wait(0.8)
 
+    def read_cell(self):
+        """Tanlangan qator nomini Ctrl+C orqali o'qish. O'qib bo'lmasa — None."""
+        sentinel = "~~spes~~"
+        pyperclip.copy(sentinel)
+        self.wait(0.1)
+        pyautogui.hotkey("ctrl", "c")
+        self.wait(0.5)
+        try:
+            txt = pyperclip.paste()
+        except Exception:  # noqa
+            return None
+        if txt == sentinel:
+            return None
+        return " ".join(txt.split())
+
+    def manual(self, i, n, it, why):
+        pyperclip.copy(it.amount_text)
+        self.checkpoint(
+            f"{i}/{n}: «{it.name}» avtomatik topilmadi.\n{why}\n\n"
+            f"Shu mahsulotni 1C Подбор'da O'ZINGIZ tanlang va kiriting:\n"
+            f"   Количество: {it.qty_text}\n   Сумма: {it.amount_text}  (nusxalandi — Ctrl+V)\n\n"
+            "Keyin «Davom» bosing — dastur keyingi mahsulotga o'tadi.")
+
     def checkpoint(self, text):
         if not self.ask(text):
             raise Stopped()
@@ -146,14 +172,20 @@ class Runner:
             n = len(items)
             for i, it in enumerate(items, 1):
                 self.status(f"Mahsulot {i}/{n}: {it.name}")
-                self.click("first_row")            # fokusni Подбор ro'yxatiga qaytarish
-                self.key("ctrl", "f")              # ro'yxatdagi qidiruv
+                # 1) qidiruv maydoniga qidiriladigan matnni yozish
+                self.click("qidiruv")
                 self.key("ctrl", "a")
                 self.paste(it.search)
                 self.key("enter")
-                self.wait(1.8)
+                self.wait(2.0)
+                # 2) birinchi topilgan qatorni tanlash va nomini tekshirish
                 self.click("first_row")
-                self.key("enter")                  # miqdor oynasi ochiladi
+                found = self.read_cell()
+                if found is not None and not same_product(it.search, found):
+                    self.manual(i, n, it, f"1C'da birinchi chiqqan: «{found or '(hech narsa topilmadi)'}»")
+                    continue
+                # 3) miqdor oynasi
+                self.key("enter")
                 self.wait(1.2)
                 for step in self.cfg["miqdor_oynasi"]:
                     if step == "QTY":
@@ -167,8 +199,8 @@ class Runner:
                 self.wait(0.8)
                 if self.cfg.get("qadamma_qadam") and i < n:
                     self.checkpoint(
-                        f"{i}/{n}: «{it.name}» — {it.qty_text} kg, summa {it.amount_text}\n\n"
-                        "Подбор oynasining pastidagi tanlanganlar ro'yxatida to'g'ri tushdimi?\n"
+                        f"{i}/{n}: «{it.name}»\n{it.qty_text} kg, summa {it.amount_text}\n\n"
+                        "Pastdagi «Подобранные позиции» ro'yxatiga to'g'ri tushdimi?\n"
                         "To'g'ri bo'lsa «Davom». Xato bo'lsa — 1C'da tuzatib, keyin «Davom».")
 
             self.status("Hujjatga o'tkazilyapti…")
@@ -179,6 +211,16 @@ class Runner:
             raise Stopped()
         finally:
             self._kl.stop()
+
+
+def _norm(t):
+    t = (t or "").lower().replace("x", "х").replace("×", "х").replace(".", ",").replace("ё", "е")
+    return "".join(t.split())
+
+
+def same_product(search, found):
+    """1C'dagi nom qidirilgan matnni o'z ichiga oladimi (bo'shliq/harf farqlarisiz)."""
+    return bool(found) and _norm(search) in _norm(found)
 
 
 def capture_click(on_point, ignore_rect=None):
