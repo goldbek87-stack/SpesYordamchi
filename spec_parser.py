@@ -47,6 +47,14 @@ def search_key(name):
     return key.strip() or name
 
 
+def search_text(name):
+    """1C Подбор qidiruvi uchun matn: nomning o'lchamdan boshlangan qismi
+    ('Шурупы размер 3,5х16 мелкий шаг' -> '3,5х16 мелкий шаг')."""
+    n = re.sub(r"\s+", " ", name).strip()
+    m = re.search(r"\d+[.,]?\d*\s*[хx×]\s*\d+", n)
+    return n[m.start():] if m else n
+
+
 @dataclass
 class Item:
     no: int
@@ -58,6 +66,19 @@ class Item:
     vat_rate: str
     vat: Decimal
     total: Decimal      # QQS bilan
+    search: str = ""    # Подбор'da qidiriladigan matn (o'zgartirsa bo'ladi)
+
+    def __post_init__(self):
+        if not self.search:
+            self.search = search_text(self.name)
+
+    @property
+    def qty_text(self):
+        return plain(self.qty, 3).rstrip("0").rstrip(",")
+
+    @property
+    def amount_text(self):
+        return plain(self.amount)
 
     @property
     def key(self):
