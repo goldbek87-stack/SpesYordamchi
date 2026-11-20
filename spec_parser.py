@@ -77,6 +77,10 @@ class Item:
         return plain(self.qty, 3).rstrip("0").rstrip(",")
 
     @property
+    def price_text(self):
+        return plain(self.price_1c)
+
+    @property
     def amount_text(self):
         return plain(self.amount)
 

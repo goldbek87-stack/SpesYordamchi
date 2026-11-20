@@ -33,8 +33,9 @@ DEFAULT = {
     "sklad_nomi": "Шуруп склад",
     "tezlik": 1.0,                 # 1 = oddiy; 2 = 2 barobar sekin (kompyuter sekin bo'lsa)
     # Miqdor oynasida bosiladigan tugmalar ketma-ketligi:
-    # QTY = miqdor, SUM = summa, TAB, ENTER, CTRL+ENTER
-    "miqdor_oynasi": ["QTY", "TAB", "TAB", "SUM", "TAB", "ENTER"],
+    # QTY = miqdor, PRICE = narx, SUM = summa, TAB, ENTER, CTRL+ENTER
+    "miqdor_oynasi": ["QTY", "TAB", "PRICE", "TAB", "SUM", "TAB", "ENTER"],
+    "cfg_versiya": 3,
     "qadamma_qadam": True,
     "shartnoma_chiziq_slash": True,  # spetsifikatsiyadagi 06-2026 -> 1C'dagi 06/2026         # har mahsulotdan keyin to'xtab so'rash (birinchi sinovlar uchun)
 }
@@ -44,7 +45,11 @@ def load_config():
     cfg = json.loads(json.dumps(DEFAULT))
     try:
         with open(CONFIG_FILE, encoding="utf-8") as f:
-            cfg.update(json.load(f))
+            saved = json.load(f)
+        if saved.get("cfg_versiya", 0) < DEFAULT["cfg_versiya"]:
+            saved.pop("miqdor_oynasi", None)       # eski ketma-ketlik yangisiga almashadi
+            saved["cfg_versiya"] = DEFAULT["cfg_versiya"]
+        cfg.update(saved)
     except (OSError, ValueError):
         pass
     return cfg
@@ -210,8 +215,13 @@ class Runner:
                 self.wait(1.5)
                 for step in self.cfg["miqdor_oynasi"]:
                     if step == "QTY":
+                        self.clear_text()
                         self.paste(it.qty_text)
+                    elif step == "PRICE":
+                        self.clear_text()
+                        self.paste(it.price_text)
                     elif step == "SUM":
+                        self.clear_text()
                         self.paste(it.amount_text)
                     elif step == "CTRL+ENTER":
                         self.key("ctrl", "enter")
@@ -220,7 +230,7 @@ class Runner:
                 self.wait(0.8)
                 if self.cfg.get("qadamma_qadam") and i < n:
                     self.checkpoint(
-                        f"{i}/{n}: «{it.name}»\n{it.qty_text} kg, summa {it.amount_text}\n\n"
+                        f"{i}/{n}: «{it.name}»\n{it.qty_text} kg, narx {it.price_text}, summa {it.amount_text}\n\n"
                         "Pastdagi «Подобранные позиции» ro'yxatiga to'g'ri tushdimi?\n"
                         "To'g'ri bo'lsa «Davom». Xato bo'lsa — 1C'da tuzatib, keyin «Davom».")
 

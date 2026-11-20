@@ -10,7 +10,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from spec_parser import fmt, fmt_qty, parse_spec, plain
 
-VERSION = "2.3"
+VERSION = "2.4"
 
 
 class App(tk.Tk):
