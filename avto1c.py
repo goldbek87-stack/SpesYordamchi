@@ -24,8 +24,10 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "sozlama.json")
 POINTS = [
     ("prodaja", "1C chap menyusidagi «Продажи» bo'limini bosing.", "click"),
     ("real_link", "Ochilgan ro'yxatdagi «Реализация (акты, накладные)» ni bosing.", "click"),
-    ("real_btn", "Ro'yxat oynasidagi yashil «⊕ Реализация ▾» tugmasini bosing.", "click"),
-    ("tovary_nakl", "Chiqqan menyudagi «Товары (накладная)» ni bosing (yangi накладная ochiladi).", "click"),
+    ("real_btn", "Ro'yxat oynasidagi yashil «⊕ Реализация ▾» tugmasini bosing.\n"
+                 "Menyu ochiladi — KEYINGI'ni bosmang, darhol menyudagi «Товары (накладная)» ni bosing.", "click"),
+    ("tovary_nakl", "Ochilgan menyudagi «Товары (накладная)» ni bosing (yangi накладная ochiladi).\n"
+                    "Menyu yopilib qolgan bo'lsa — «Qaytadan» ni bosing.", "click"),
     ("date", "Yangi накладная'da «Накладная №» yonidagi «от:» SANA maydonini bosing.", "click"),
     ("kontragent", "«Контрагент» maydonini bosing, keyin istalgan kontragentni TANLANG (Подбор ishlashi uchun kerak).", "click"),
     ("dogovor", "«Договор» maydonini bosing, keyin shartnomani TANLANG.", "click"),

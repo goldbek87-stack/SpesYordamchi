@@ -10,7 +10,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from spec_parser import fmt, fmt_qty, parse_spec, plain
 
-VERSION = "3.3"
+VERSION = "3.4"
 
 
 class App(tk.Tk):
@@ -336,8 +336,9 @@ class App(tk.Tk):
             def start_listen():
                 upd_rect()
                 st["lst"] = self.avto.capture_click(on_point, ignore_rect=lambda: st["rect"])
-            self.after(600, start_listen)    # avvalgi bosishlar hisobga olinmasin
-            self.after(700, poll)
+            quick = key == "tovary_nakl"       # menyu ochiq — tez tinglash kerak
+            self.after(120 if quick else 600, start_listen)    # avvalgi bosishlar hisobga olinmasin
+            self.after(200 if quick else 700, poll)
 
         def poll():
             if not w.winfo_exists():
@@ -347,7 +348,25 @@ class App(tk.Tk):
                 return
             stop_listener()
             key, text, kind = steps[st["i"]]
+            gx, gy = st["got"]
+            if key == "tovary_nakl" and "real_btn" in points:
+                rx, ry = points["real_btn"]
+                if abs(gx - rx) < 80 and abs(gy - ry) < 12:
+                    # bu yana «Реализация» tugmasi — menyu bandi emas
+                    lbl.config(text="Bu yana «Реализация» tugmasi bosildi.\n\n"
+                                    "Menyu ochilganda uning ICHIDAGI «Товары (накладная)» qatorini bosing.\n\n"
+                                    "⏳ kutyapman…")
+                    st["got"] = None
+                    st["lst"] = self.avto.capture_click(lambda x, y: st.__setitem__("got", (x, y)),
+                                                        ignore_rect=lambda: st["rect"])
+                    self.after(200, poll)
+                    return
             points[key] = list(st["got"])
+            if key == "real_btn":
+                # menyu ochiq turgan bo'lsin — Keyingi'siz darhol keyingi qadamga
+                st["i"] += 1
+                arm()
+                return
             lbl.config(text=f"Qadam {st['i'] + 1}/{len(steps)}\n\n{text}\n\n"
                             f"✔ Eslab qolindi: {st['got'][0]}, {st['got'][1]}\n\n"
                             "To'g'ri joyni bosgan bo'lsangiz — «Keyingi ▶».\nNoto'g'ri bo'lsa — «Qaytadan».")
