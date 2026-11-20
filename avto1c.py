@@ -380,9 +380,12 @@ class Runner:
         raise Failed("Yangi накладная ochilmadi. 1C'da Продажи → Реализация ro'yxati ochiladimi — tekshiring, "
                      "yoki «O'rgatish» ni qaytadan qiling.")
 
-    def fill_field(self, name, text, settle=1.5, label="", choose=True):
-        """Maydonni bosib, tozalab, yozib, chiqqan ro'yxatdan birinchi variantni tanlash (↓ + Enter)."""
-        for attempt in (1, 2):
+    def fill_field(self, name, text, settle=1.5, label="", choose=True, want=None, max_variants=8):
+        """Maydonni bosib, tozalab, yozib, chiqqan ro'yxatdan variant tanlash.
+        want(matn) -> True bo'lsa to'g'ri tanlangan. Bo'lmasa keyingi variant (2-, 3-, …) sinab ko'riladi."""
+        tries = range(1, max_variants + 1) if (choose and want) else range(1, 3)
+        last = None
+        for k in tries:
             self.click(name)
             self.wait(0.3)
             self.key("shift", "f4")          # 1C: maydonni tozalash
@@ -390,8 +393,9 @@ class Runner:
             self.paste(text)
             self.wait(settle)                # variantlar ro'yxati chiqsin
             if choose:
-                self.key("down")             # ro'yxatdagi birinchi variant
-                self.wait(0.4)
+                for _ in range(k if want else 1):
+                    self.key("down")         # k-variantgacha tushish
+                    self.wait(0.25)
                 self.key("enter")            # tanlash
                 self.wait(1.2)
             else:
@@ -401,10 +405,16 @@ class Runner:
             got = self.read_field()
             self.key("tab")
             self.wait(0.5)
-            self.log(f"   {label}: yozildi {text!r}, 1C'da {got!r}")
-            if got is None or got.strip():
+            self.log(f"   {label}: yozildi {text!r}, variant {k}, 1C'da {got!r}")
+            last = got
+            if got is None:
+                return None                  # o'qib bo'lmadi — tekshiruv oynasida odam ko'radi
+            if not got.strip():
+                continue
+            if want is None or want(got):
                 return got
-            self.log(f"   {label}: bo'sh qoldi, qayta urinish {attempt}")
+        if want and last:
+            raise Failed(f"«{label}»: ro'yxatdan to'g'ri variant topilmadi (oxirgisi: «{last}»).")
         raise Failed(f"«{label}» maydoniga yozib bo'lmadi (bo'sh qoldi).")
 
     def add_item(self, i, n, it):
@@ -482,9 +492,13 @@ class Runner:
             self.status("Kontragent (INN bo'yicha)…")
             g_k = self.fill_field("kontragent", spec.buyer_inn, 2.5, "Kontragent")
             self.status("Shartnoma…")
-            g_d = self.fill_field("dogovor", spec.contract_no, 2.0, "Shartnoma")
+            cn = _norm(spec.contract_no)
+            g_d = self.fill_field("dogovor", spec.contract_no, 2.0, "Shartnoma",
+                                  want=lambda t: cn in _norm(t))
             self.status("Склад…")
-            g_s = self.fill_field("sklad", self.cfg["sklad_nomi"], 1.5, "Склад")
+            sk = _norm(self.cfg["sklad_nomi"])
+            g_s = self.fill_field("sklad", self.cfg["sklad_nomi"], 1.5, "Склад",
+                                  want=lambda t: _norm(t) == sk)
 
             def show(v):
                 return "(o'qib bo'lmadi)" if v is None else v
